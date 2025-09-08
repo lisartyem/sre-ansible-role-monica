@@ -1,6 +1,6 @@
 galaxy_info:
   role_name: ansible-role-monica
-  author: kevit
+  author: LisArtm
   description: Install and maintain Monica CRM
   company: Acme, Inc.
   license: Apache 2.0
@@ -10,6 +10,18 @@ galaxy_info:
     - name: EL
       versions:
         - 7
+        - 8
+        - 9
+    - name: Ubuntu
+      versions:
+        - bionic
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - buster
+        - bullseye
+        - bookworm
 
   galaxy_tags:
     - system

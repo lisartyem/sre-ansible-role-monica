@@ -1,1 +1,6 @@
+---
+# Main variables file for Monica role
+monica_os_family: "{{ ansible_os_family }}"
 
+# Dynamic package list based on OS
+monica_packages: "{{ monica_php_packages + monica_common_packages }}"

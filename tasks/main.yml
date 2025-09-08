@@ -1,126 +1,137 @@
 ---
-- name: install packages
-  apt:
-    name: "{{ item }}"
+- name: Include OS-specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution }}_{{ ansible_distribution_major_version }}.yml"
+    - "{{ ansible_distribution }}.yml"
+    - "{{ ansible_os_family }}.yml"
+    - "default.yml"
+
+- name: Add PHP repository for Debian
+  block:
+    - name: Install prerequisites for PHP repository
+      apt:
+        name: "{{ monica_additional_packages }}"
+        state: present
+        update_cache: yes
+
+    - name: Add GPG key for PHP repository
+      apt_key:
+        url: https://packages.sury.org/php/apt.gpg
+        state: present
+
+    - name: Add PHP repository
+      apt_repository:
+        repo: "deb https://packages.sury.org/php/ {{ ansible_distribution_release }} main"
+        state: present
+        filename: php-sury
+  when: monica_os_family == 'Debian'
+
+- name: Install required packages
+  package:
+    name: "{{ monica_packages }}"
     state: present
-    update_cache: yes
-  loop:
-    - git
-    - apt-transport-https
-    - nginx
+  when: monica_os_family in ['RedHat', 'Debian']
 
-- name: check out master branch
-  git:
-    repo: 'https://github.com/monicahq/monica'
-    dest: /srv/monicahq
-    version: master
-
-- name: Add the user
+- name: Create monica user
   user:
-    name: monicahq
-    shell: /usr/bin/nologin
-    home: /srv/monicahq
+    name: "{{ monica_user }}"
+    group: "{{ monica_group }}"
+    system: yes
+    create_home: yes
+    home: "{{ monica_home }}"
 
-- name: Install sury key
-  apt_key:
-    url: 'https://packages.sury.org/php/apt.gpg'
-    state: present
+- name: Create application directory
+  file:
+    path: "{{ monica_app_dir }}"
+    state: directory
+    owner: "{{ monica_user }}"
+    group: "{{ monica_group }}"
+    mode: '0755'
 
-- name: Add sury repositories
-  apt_repository:
-    repo: "deb https://packages.sury.org/php/ stretch main"
-    state: present
-    update_cache: yes
-    filename: 'sury'
+- name: Clone Monica repository
+  git:
+    repo: "https://github.com/monicahq/monica.git"
+    dest: "{{ monica_app_dir }}"
+    version: "{{ monica_version }}"
+    force: yes
 
-- name: install php dependencies
-  apt:
-    name: "{{ item }}"
-    state: present
-    update_cache: yes
-  loop:
-    - php7.3
-    - php7.3-cli
-    - php7.3-intl
-    - php7.3-iconv
-    - php7.3-fpm
-    - php7.3-curl
-    - php7.3-gd
-    - php7.3-mysql
-    - php7.3-mysqli
-    - php7.3-opcache
-    - php7.3-json
-    - php7.3-mbstring
-    - php7.3-soap
-    - php7.3-xml
-    - php7.3-zip
-    - php7.3-gmp
-    - php7.3-bcmath
-    - php-memcached
-    - php-xdebug
-    - php-redis
+- name: Install Composer
+  get_url:
+    url: https://getcomposer.org/installer
+    dest: /tmp/composer-setup.php
+    mode: '0755'
 
-- name: reload service php-fcgi
-  become: true
-  systemd:
-    name: php7.3-fpm
-    state: reloaded
+- name: Run Composer installation
+  command: php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+  args:
+    creates: /usr/local/bin/composer
 
-- name: install composer
-  include_role:
-    name: geerlingguy.composer
-
-- name: install composer dependencies
+- name: Install PHP dependencies with Composer
   composer:
     command: install
-    working_dir: /srv/monicahq
-- name: prepare configuration
+    working_dir: "{{ monica_app_dir }}"
+    optimize_autoloader: yes
+    no_dev: yes
+
+- name: Copy environment file
   template:
     src: env.j2
-    dest: /srv/monicahq/.env
+    dest: "{{ monica_app_dir }}/.env"
+    owner: "{{ monica_user }}"
+    group: "{{ monica_group }}"
+    mode: '0644'
 
-- name: Run an initial key generation
-  command: "/usr/bin/php /srv/monicahq/artisan key:generate"
-  args:
-    chdir: /srv/monicahq/
-  tags: molecule-notest
-
-- name: Run an initial migration
-  command: "/usr/bin/php /srv/monicahq/artisan setup:production --force"
-  args:
-    chdir: /srv/monicahq/
-  tags: molecule-notest
-
-- name: Place a scheduler cron job
-  cron:
-    user: monicahq
-    name: "scheduler"
-    job: "/usr/bin/php /srv/monicahq/artisan schedule:run"
-
-- name: Recursively change ownership of a directory
+- name: Set proper permissions
   file:
-    path: /srv/monicahq
-    state: directory
+    path: "{{ monica_app_dir }}"
+    owner: "{{ monica_user }}"
+    group: "{{ monica_group }}"
     recurse: yes
-    owner: monicahq
-    group: www-data
 
-- name: Put right permissions to storage
-  file:
-    path: /srv/monicahq/storage
-    state: directory
-    recurse: yes
-    mode: g+w
-- name: Create nginx vhost config
+- name: Generate application key
+  command: php artisan key:generate
+  args:
+    chdir: "{{ monica_app_dir }}"
+  become: yes
+  become_user: "{{ monica_user }}"
+
+- name: Configure PHP-FPM pool
   template:
-    src: monicahq.conf.j2
-    dest: /etc/nginx/sites-enabled/monica.conf
-- name: Remove default nginx configuration
+    src: www.conf.j2
+    dest: "{{ monica_php_fpm_pool_path }}/monica.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart php-fpm
+
+- name: Configure Nginx
+  template:
+    src: monica.conf.j2
+    dest: "{{ monica_web_config_path }}/monica.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart nginx
+
+- name: Enable site in Nginx (Debian)
   file:
-    path: /etc/nginx/sites-enabled/default
-    state: absent
-- name: reload service nginx
-  become: true
+    src: "{{ monica_web_config_path }}/monica.conf"
+    dest: "/etc/nginx/sites-enabled/monica.conf"
+    state: link
+  when: monica_os_family == 'Debian'
+  notify: restart nginx
+
+- name: Enable and start PHP-FPM service
+  systemd:
+    name: "{{ monica_php_service }}"
+    enabled: yes
+    state: started
+  notify: restart php-fpm
+
+- name: Enable and start Nginx
   systemd:
     name: nginx
-    state: reloaded
+    enabled: yes
+    state: started
+  notify: restart nginx
