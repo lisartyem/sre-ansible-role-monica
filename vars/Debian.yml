@@ -1,0 +1,30 @@
+---
+# Debian specific variables for Monica role
+monica_php_service: php8.2-fpm
+monica_php_fpm_pool_path: /etc/php/8.2/fpm/pool.d
+monica_php_config_dir: /etc/php/8.2
+monica_web_config_path: /etc/nginx/sites-available
+
+# Additional packages for Debian
+monica_additional_packages:
+  - software-properties-common
+  - apt-transport-https
+  - lsb-release
+  - ca-certificates
+  - gnupg
+
+# PHP packages for Debian
+monica_php_packages:
+  - php8.2
+  - php8.2-common
+  - php8.2-cli
+  - php8.2-fpm
+  - php8.2-curl
+  - php8.2-gd
+  - php8.2-json
+  - php8.2-mbstring
+  - php8.2-mysql
+  - php8.2-xml
+  - php8.2-zip
+  - php8.2-intl
+  - php8.2-bcmath

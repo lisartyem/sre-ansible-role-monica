@@ -1,0 +1,22 @@
+---
+# RedHat specific variables for Monica role
+monica_php_service: php-fpm
+monica_php_fpm_pool_path: /etc/php-fpm.d
+monica_php_config_dir: /etc
+monica_web_config_path: /etc/nginx/conf.d
+
+# PHP packages for RedHat
+monica_php_packages:
+  - php
+  - php-common
+  - php-cli
+  - php-fpm
+  - php-curl
+  - php-gd
+  - php-json
+  - php-mbstring
+  - php-mysqlnd
+  - php-xml
+  - php-zip
+  - php-intl
+  - php-bcmath
